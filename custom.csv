@@ -1,0 +1,2 @@
+CidrBlock,Protocol,Port,Action,FirewallRuleDescription
+0.0.0.0/0,ICMP,ALL,拒绝,通过Ping测试网络连通性 (放通ALL ICMP)

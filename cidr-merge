@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+import ipaddress
+import sys
+import argparse
+
+def get_covering_cidr(net1, net2):
+    start = int(net1.network_address)
+    end = int(net2.broadcast_address)
+    diff = start ^ end
+    if diff == 0:
+        return net1
+    diff_len = diff.bit_length()
+    new_prefix = net1.max_prefixlen - diff_len
+    return ipaddress.ip_network((start, new_prefix), strict=False)
+
+def merge_cidrs_dp(ip_list, target_count, quiet=False):
+    nets = [ipaddress.ip_network(ip.strip(), strict=False) for ip in ip_list if ip.strip()]
+    nets = list(ipaddress.collapse_addresses(nets))
+    n = len(nets)
+    
+    if not quiet:
+        print(f"[*] 初始无损合并后，独立网段数为: {n} 条", file=sys.stderr)
+        
+    if n <= target_count:
+        return nets
+        
+    prefix_ips = [0] * (n + 1)
+    for i in range(n):
+        prefix_ips[i+1] = prefix_ips[i] + nets[i].num_addresses
+
+    inf = float('inf')
+    dp = [[inf] * (target_count + 1) for _ in range(n + 1)]
+    backtrack = [[0] * (target_count + 1) for _ in range(n + 1)]
+    dp[0][0] = 0
+    
+    for i in range(1, n + 1):
+        for j in range(1, min(i + 1, target_count + 1)):
+            for k in range(1, i + 1):
+                if dp[k-1][j-1] != inf:
+                    sup_net = get_covering_cidr(nets[k-1], nets[i-1])
+                    contained_ips = prefix_ips[i] - prefix_ips[k-1]
+                    cost = sup_net.num_addresses - contained_ips
+                    
+                    if dp[k-1][j-1] + cost < dp[i][j]:
+                        dp[i][j] = dp[k-1][j-1] + cost
+                        backtrack[i][j] = k - 1
+                        
+    result_cidrs = []
+    curr_i, curr_j = n, target_count
+    
+    while curr_i > 0:
+        prev_i = backtrack[curr_i][curr_j]
+        sup_net = get_covering_cidr(nets[prev_i], nets[curr_i-1])
+        result_cidrs.append(sup_net)
+        curr_i = prev_i
+        curr_j -= 1
+        
+    result_cidrs.reverse()
+    return list(ipaddress.collapse_addresses(result_cidrs))
+
+def main():
+    parser = argparse.ArgumentParser(description="最优 CIDR 合并工具：将IP列表合并为指定数量内的规则，且引入最少额外IP。")
+    parser.add_argument("input", help="输入文件路径，包含原始 IP/CIDR 列表")
+    parser.add_argument("-t", "--target", type=int, default=100, help="目标规则数限制 (默认: 100)")
+    parser.add_argument("-o", "--output", help="输出文件路径 (如果不指定，则输出到终端)")
+    parser.add_argument("-q", "--quiet", action="store_true", help="静默模式：不输出任何提示信息，只输出最终CIDR")
+    
+    args = parser.parse_args()
+
+    try:
+        with open(args.input, "r") as f:
+            raw_ips = f.readlines()
+    except FileNotFoundError:
+        print(f"错误: 找不到输入文件 '{args.input}'", file=sys.stderr)
+        sys.exit(1)
+        
+    if not args.quiet:
+        print(f"[*] 正在读取文件: {args.input}", file=sys.stderr)
+        
+    merged_nets = merge_cidrs_dp(raw_ips, args.target, args.quiet)
+    
+    if not args.quiet:
+        print(f"[*] 动态规划合并完成，最终生成 {len(merged_nets)} 条规则。", file=sys.stderr)
+
+    out_lines = [str(net) for net in merged_nets]
+    
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write("\n".join(out_lines) + "\n")
+        if not args.quiet:
+            print(f"[*] 结果已保存至: {args.output}", file=sys.stderr)
+    else:
+        # 直接输出到标准输出，方便管道操作
+        print("\n".join(out_lines))
+
+if __name__ == "__main__":
+    main()
