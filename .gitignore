@@ -1,2 +1,4 @@
-# eo.txt eo99.txt
+# eo.txt eo98.txt
 *.txt
+# firewall_rules.csv
+*.csv
