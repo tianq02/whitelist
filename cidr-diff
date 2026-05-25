@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+import ipaddress
+import sys
+import argparse
+
+def load_cidrs(file_path):
+    try:
+        with open(file_path, "r") as f:
+            lines = f.readlines()
+        nets = [ipaddress.ip_network(line.strip(), strict=False) for line in lines if line.strip()]
+        return list(ipaddress.collapse_addresses(nets))
+    except FileNotFoundError:
+        print(f"错误: 找不到文件 '{file_path}'", file=sys.stderr)
+        sys.exit(1)
+
+def get_diff_cidrs(base_nets, subtract_nets):
+    '''计算 base_nets 中存在但 subtract_nets 中不存在的 CIDR 列表（差集）'''
+    current_nets = base_nets.copy()
+    for sub in subtract_nets:
+        next_nets = []
+        for base in current_nets:
+            if not base.overlaps(sub):
+                next_nets.append(base)
+            elif sub.supernet_of(base) or sub == base:
+                pass
+            elif base.supernet_of(sub):
+                next_nets.extend(list(base.address_exclude(sub)))
+        current_nets = next_nets
+    return list(ipaddress.collapse_addresses(current_nets))
+
+def main():
+    parser = argparse.ArgumentParser(description="CIDR 差异对比工具：通用工具，对比两份 IP 列表之间新增和减少的差异。")
+    parser.add_argument("base", help="基础 IP 列表文件路径 (File 1)")
+    parser.add_argument("dest", help="对比 IP 列表文件路径 (File 2)")
+    parser.add_argument("-q", "--quiet", action="store_true", help="静默模式：只输出新增量和减少量")
+    parser.add_argument("-v", "--verbose", action="store_true", help="详细模式：输出具体网段增减")
+    parser.add_argument("-e", "--error-on-shrink", action="store_true", help="脚本模式：覆盖不全时返回值非0")
+
+    args = parser.parse_args()
+
+    base_net = load_cidrs(args.base)
+    base_count = sum(net.num_addresses for net in base_net)
+
+    dest_net = load_cidrs(args.dest)
+    dest_count = sum(net.num_addresses for net in dest_net)
+
+    # 新增的：在 dest 但不在 base 的
+    added_nets = get_diff_cidrs(dest_net, base_net)
+    added_ip_count = sum(net.num_addresses for net in added_nets)
+
+    # 减少的：在 base 但不在 dest 的
+    removed_nets = get_diff_cidrs(base_net, dest_net)
+    removed_ip_count = sum(net.num_addresses for net in removed_nets)
+
+    if args.quiet:
+        print(f"+{added_ip_count} -{removed_ip_count}")
+    else:
+        print("=" * 50)
+        print("统计信息")
+        max_len = min(max(len(args.base),len(args.dest)), 15)
+        print(f"{args.base:<{max_len}} IP 总数 (base) : {base_count}")
+        print(f"{args.dest:<{max_len}} IP 总数 (dest) : {dest_count}")
+        print(f"新增的 IP 数 (+) : {added_ip_count}")
+        print(f"减少的 IP 数 (-) : {removed_ip_count}")
+        print("=" * 50)
+
+        if args.verbose:
+            for net in added_nets:
+                print(f"+ {net}")
+            for net in removed_nets:
+                print(f"- {net}")
+            print("=" * 50)
+
+        if removed_ip_count > 0:
+            print("[warn]：存在减小的 IP 范围。")
+            print("=" * 50)
+
+    if args.error_on_shrink:
+        sys.exit(removed_ip_count > 0)
+
+if __name__ == "__main__":
+    main()
