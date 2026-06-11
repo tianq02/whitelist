@@ -2,7 +2,7 @@
 
 # 使用方法: ./convert.sh input.txt [output.csv] [tag] [custom.csv]
 
-INPUT_FILE="${1:-eo98.txt}"
+INPUT_FILE="${1:-eo99.txt}"
 OUTPUT_FILE="${2:-firewall_rules.csv}"
 TAG="${3:-EO}"
 CUSTOM_FILE="${4:-custom.csv}"

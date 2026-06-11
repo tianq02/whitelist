@@ -10,8 +10,8 @@
 
 ```bash
 nano eo.txt
-./cidr-merge -t 98 -o eo98.txt eo.txt
-./cidr-diff eo.txt eo98.txt
-./convert.sh
+./cidr-merge -t 99 -o eo99.txt eo.txt
+./cidr-diff eo.txt eo99.txt
+./convert.sh eo99.txt
 cat firewall_rules.csv
 ```
